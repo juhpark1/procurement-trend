@@ -42,3 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Supabase CLI 연결 정보 (자동 생성)
+/supabase/.temp/
