@@ -4,6 +4,10 @@ export default function Home() {
   return (
     <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
       <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+        {/* 앱 이름 제목 */}
+        <h1 className="text-4xl font-bold tracking-tight text-black dark:text-zinc-50">
+          공공정부기관 발주현황 트렌드
+        </h1>
         <Image
           className="dark:invert h-5 w-[100px]"
           src="/next.svg"
@@ -13,13 +17,14 @@ export default function Home() {
           priority
         />
         <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+          {/* 페이지 제목(h1)은 앱 이름 하나만 두기 위해 h2로 바꿈 */}
+          <h2 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
             To get started, edit the{" "}
             <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
               page.tsx
             </code>{" "}
             file.
-          </h1>
+          </h2>
           <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
             Looking for a starting point or more instructions? Head over to{" "}
             <a
