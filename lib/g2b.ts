@@ -81,7 +81,8 @@ export class G2bFormatError extends Error {
 }
 
 export type FetchOptions = {
-  topInstCode: string;
+  // 비우면 기관 조건 없이 전체 기관의 공고를 받는다
+  topInstCode?: string;
   from?: Date;
   to?: Date;
   page?: number;
@@ -170,8 +171,8 @@ export async function fetchNotices(options: FetchOptions): Promise<FetchResult> 
       bizYmdDiv: "pstgDt",
       startBizYmd: toKstYmd(from),
       endBizYmd: toKstYmd(to),
-      dmstUntyGrpNo: `hghrkPbadmsStdInstCd:${options.topInstCode}`,
-      dmstUntyGrpNm: "전체",
+      dmstUntyGrpNo: options.topInstCode ? `hghrkPbadmsStdInstCd:${options.topInstCode}` : "",
+      dmstUntyGrpNm: options.topInstCode ? "전체" : "",
       prcmBsneAreaCd: WORK_TYPE_CODES,
       frcpYn: "N",
       laseYn: "N",
