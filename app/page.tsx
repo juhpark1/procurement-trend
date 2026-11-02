@@ -1,74 +1,128 @@
-import Image from "next/image";
+// 첫 화면 [A] 분야별 발주 추이 (Must 1)
+// Design Ref: §5.1 첫 화면, §2.2② 대시보드 흐름
+// Plan SC: SC-2 (분야 버튼 1번으로 분야별 월별 추이), SC-4 (합계를 누르면 포함된 공고 목록)
+import Link from "next/link";
+import { Suspense } from "react";
+import { CategoryTabs } from "@/components/CategoryTabs";
+import { NoticeList } from "@/components/NoticeList";
+import { TrendChart, type ChartPoint } from "@/components/TrendChart";
+import { CATEGORIES } from "@/lib/categories";
+import { currentKstMonth, formatAmount, formatMonth } from "@/lib/format";
+import { getMonthlyStats, getMonthNotices } from "@/lib/queries";
 
-export default function Home() {
+const PAGE_SIZE = 20;
+
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+// 주소의 ?category= 값을 확인한다 (모르는 값이면 전체)
+function readCategory(value: unknown): string {
+  const valid = ["all", "ai", ...CATEGORIES.filter((category) => !category.excluded).map((category) => category.code)];
+  return typeof value === "string" && valid.includes(value) ? value : "all";
+}
+
+function readMonth(value: unknown): string | null {
+  return typeof value === "string" && /^\d{4}-\d{2}$/.test(value) ? value : null;
+}
+
+function readLimit(value: unknown): number {
+  const limit = Number(value);
+  return Number.isInteger(limit) && limit >= PAGE_SIZE && limit <= 1000 ? limit : PAGE_SIZE;
+}
+
+async function Dashboard({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const category = readCategory(params.category);
+  const selectedMonth = readMonth(params.month);
+  const limit = readLimit(params.limit);
+
+  const stats = await getMonthlyStats(category);
+  // 수집 첫 달과 진행 중인 달은 "부분 데이터"
+  const firstMonth = stats[0]?.month;
+  const thisMonth = currentKstMonth();
+  const points: ChartPoint[] = stats.map((stat) => ({
+    month: stat.month,
+    label: formatMonth(stat.month),
+    noticeCount: stat.noticeCount,
+    amountEok: Math.round(stat.amountSum / 100_000_000),
+    partial: stat.month === firstMonth || stat.month === thisMonth,
+  }));
+
+  const list = selectedMonth ? await getMonthNotices(selectedMonth, category, limit) : null;
+  const categoryName =
+    category === "all"
+      ? "전체"
+      : category === "ai"
+        ? "AI 분야 모아 보기"
+        : (CATEGORIES.find((item) => item.code === category)?.label ?? "전체");
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        {/* 앱 이름 제목 */}
-        <h1 className="text-4xl font-bold tracking-tight text-black dark:text-zinc-50">
-          공공정부기관 발주현황 트렌드
-        </h1>
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          {/* 페이지 제목(h1)은 앱 이름 하나만 두기 위해 h2로 바꿈 */}
-          <h2 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h2>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <>
+      <CategoryTabs selected={category} />
+
+      {points.length === 0 ? (
+        <p className="rounded-lg bg-white p-6 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+          아직 이 분야로 분류된 공고가 없습니다.
+        </p>
+      ) : (
+        <>
+          <TrendChart data={points} category={category} selectedMonth={selectedMonth} />
+
+          {/* 월별 합계: 숫자를 누르면 그 달에 포함된 공고 목록이 열린다 */}
+          <div className="flex flex-wrap gap-3">
+            {points.map((point) => (
+              <Link
+                key={point.month}
+                href={`/?category=${category}&month=${point.month}#list`}
+                scroll={false}
+                className={`rounded-lg border px-4 py-3 text-sm ${
+                  point.month === selectedMonth
+                    ? "border-blue-700 bg-blue-50 dark:bg-blue-950"
+                    : "border-zinc-200 bg-white hover:border-blue-400 dark:border-zinc-800 dark:bg-zinc-900"
+                }`}
+              >
+                <div className="font-medium">
+                  {point.label}
+                  {point.partial && <span className="ml-1 text-xs text-amber-600">부분 데이터</span>}
+                </div>
+                <div className="text-zinc-700 dark:text-zinc-300">
+                  {point.noticeCount.toLocaleString("ko-KR")}건 ·{" "}
+                  {formatAmount(stats.find((stat) => stat.month === point.month)?.amountSum ?? null)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+
+      {selectedMonth && list && (
+        <section id="list" className="flex flex-col gap-3">
+          <h3 className="text-lg font-semibold">
+            {formatMonth(selectedMonth)} · {categoryName} 공고 목록
+          </h3>
+          <NoticeList
+            items={list.items}
+            total={list.total}
+            moreHref={`/?category=${category}&month=${selectedMonth}&limit=${limit + PAGE_SIZE}#list`}
+            emptyMessage="해당 월 공고 없음"
+          />
+        </section>
+      )}
+    </>
+  );
+}
+
+export default function Home({ searchParams }: PageProps<"/">) {
+  return (
+    <section className="flex flex-col gap-4">
+      <div>
+        <h2 className="text-xl font-semibold">분야별 발주 추이</h2>
+        <p className="text-sm text-zinc-500">
+          중앙부처 SW 사업 입찰공고의 월별 건수와 추정가격(부가세 제외) 합계예요. 재공고는 1건으로 셉니다.
+        </p>
+      </div>
+      <Suspense fallback={<p className="text-sm text-zinc-400">추이를 불러오는 중…</p>}>
+        <Dashboard searchParams={searchParams} />
+      </Suspense>
+    </section>
   );
 }
