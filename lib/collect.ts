@@ -13,6 +13,8 @@ export type CollectOptions = {
   kind: RunRow["kind"];
   // 오늘부터 며칠 전까지 받을지 (첫 수집 30일, 매일 3일)
   days: number;
+  // 지난 기간을 한 번만 따로 받을 때의 시작·끝 날짜 (둘 다 있으면 days보다 우선)
+  range?: { from: Date; to: Date };
 };
 
 export type CollectResult = {
@@ -132,8 +134,8 @@ async function saveNotices(notices: Notice[]): Promise<{ inserted: number; updat
 
 // 수집 한 번 실행
 export async function runCollection(options: CollectOptions): Promise<CollectResult> {
-  const to = new Date();
-  const from = new Date(to.getTime() - options.days * DAY_MS);
+  const to = options.range?.to ?? new Date();
+  const from = options.range?.from ?? new Date(to.getTime() - options.days * DAY_MS);
 
   const { data: run, error: runError } = await db()
     .from("runs")

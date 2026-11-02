@@ -23,6 +23,26 @@ export async function GET(request: NextRequest) {
   // 기본은 최근 3일(매일 실행), 첫 적재 때만 days=30. 서비스가 1개월만 주므로 30일이 최대
   const days = Math.min(30, Math.max(1, Number(params.get("days") ?? 3) || 3));
 
+  // 지난 기간 한 번만 받기: ?from=YYYY-MM-DD&to=YYYY-MM-DD (최대 31일, kind는 manual)
+  // 매일 수집(최근 3일)과 같은 흐름이며, 같은 공고는 공고번호로 중복 없이 합쳐진다
+  const fromParam = params.get("from");
+  const toParam = params.get("to");
+  if (fromParam || toParam) {
+    const valid = (text: string | null) => text !== null && /^\d{4}-\d{2}-\d{2}$/.test(text);
+    if (!valid(fromParam) || !valid(toParam)) {
+      return Response.json({ ok: false, error: "from, to는 YYYY-MM-DD 형식으로 둘 다 필요합니다." }, { status: 400 });
+    }
+    // 날짜는 한국 시간 하루의 끝까지 포함하도록 정오로 맞춘다
+    const from = new Date(`${fromParam}T12:00:00+09:00`);
+    const to = new Date(`${toParam}T12:00:00+09:00`);
+    const span = (to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000);
+    if (!(span >= 0 && span <= 31)) {
+      return Response.json({ ok: false, error: "기간은 0~31일 사이여야 합니다." }, { status: 400 });
+    }
+    const result = await runCollection({ kind: "manual", days, range: { from, to } });
+    return Response.json({ ok: result.status !== "failed", ...result }, { status: result.status === "failed" ? 502 : 200 });
+  }
+
   // 밀린 분류만 진행 (첫 적재 뒤 여러 번 불러 2천여 건을 나눠 분류할 때)
   if (params.get("classifyOnly") === "1") {
     const classified = await classifyPending(DEFAULT_CLASSIFY_LIMIT);
