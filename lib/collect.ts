@@ -3,7 +3,7 @@
 // Plan SC: SC-5 자동 수집 안정성 — 실행마다 runs 표에 결과를 남긴다.
 import { createHash } from "node:crypto";
 import { fetchNotices, type Notice } from "@/lib/g2b";
-import { isTargetInstitution } from "@/lib/institutions";
+import { isTargetNotice } from "@/lib/institutions";
 import { db, type NoticeRow, type RunRow } from "@/lib/db";
 
 const PAGE_SIZE = 100; // 나라장터가 한 번에 주는 최대 건수
@@ -176,7 +176,7 @@ export async function runCollection(options: CollectOptions): Promise<CollectRes
     }
 
     result.fetched = received.length;
-    const targets = latestByBizNo(received.filter((notice) => isTargetInstitution(notice.topInstCode)));
+    const targets = latestByBizNo(received.filter(isTargetNotice));
     result.kept = targets.length;
 
     const saved = await saveNotices(targets);
