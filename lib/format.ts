@@ -1,4 +1,9 @@
-// 화면 표시용 형식 맞추기 (금액·날짜)
+// 화면 표시용 형식 맞추기 (금액·날짜·링크)
+
+// 나라장터 공고 원문 링크 — URL정보제공서비스 화면에 공고번호를 넣으면 그 공고 1건이 나온다 (기간 제한 없음)
+export function g2bNoticeUrl(bizNo: string): string {
+  return `https://www.g2b.go.kr/link/FIUA006_01/single/?bizNo=${encodeURIComponent(bizNo)}`;
+}
 
 // 원 단위 금액 → "1,234억 원" / "5,600만 원" / "공고에 명시되지 않음"
 export function formatAmount(amount: number | null): string {

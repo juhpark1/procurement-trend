@@ -67,6 +67,79 @@ export type NoticeListItem = Pick<
   "id" | "biz_no" | "title" | "demand_inst" | "notice_inst" | "amount" | "notice_date" | "category"
 >;
 
+export type SearchItem = NoticeListItem & { sameCategory: boolean };
+
+// 검색어 안의 특수 문자를 글자 그대로 찾도록 처리 (%, _, \)
+function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+const LIST_COLUMNS = "id, biz_no, title, demand_inst, notice_inst, amount, notice_date, category";
+
+// 유사 사례 검색 ("SW 아님"은 항상 제외)
+// Design Ref: §2.2③ 검색 규칙
+//  · 키워드만: 사업명에 키워드가 든 공고 + 그 공고들에서 가장 많은 분야의 공고 ("같은 분야" 표시)
+//  · 분야만: 그 분야 공고
+//  · 둘 다: 사업명에 키워드가 들고 그 분야인 공고
+//  · 공고일자 최신순, 같은 공고는 한 번만, limit건까지
+export async function searchNotices(
+  keyword: string,
+  filter: CategoryFilter,
+  limit: number,
+): Promise<{ items: SearchItem[]; total: number; topCategory: string | null }> {
+  const codes = categoryCodes(filter);
+  const base = () =>
+    db().from("notice_latest").select(LIST_COLUMNS).or("category.is.null,category.neq.non_sw").limit(1000);
+
+  let keywordMatches: NoticeListItem[] = [];
+  if (keyword) {
+    let query = base().ilike("title", `%${escapeLike(keyword)}%`);
+    if (codes) query = query.in("category", codes);
+    const { data, error } = await query;
+    if (error) throw new Error(`검색 실패: ${error.message}`);
+    keywordMatches = (data ?? []) as NoticeListItem[];
+  }
+
+  // 키워드만 있을 때: 키워드 일치 공고에서 가장 많은 분야를 "같은 분야"로 함께 보여준다
+  let topCategory: string | null = null;
+  let categoryMatches: NoticeListItem[] = [];
+  if (keyword && !codes) {
+    const counts = new Map<string, number>();
+    for (const item of keywordMatches) {
+      if (item.category) counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
+    }
+    topCategory = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    if (topCategory) {
+      const { data, error } = await base().eq("category", topCategory);
+      if (error) throw new Error(`같은 분야 조회 실패: ${error.message}`);
+      categoryMatches = (data ?? []) as NoticeListItem[];
+    }
+  } else if (!keyword && codes) {
+    const { data, error } = await base().in("category", codes);
+    if (error) throw new Error(`분야 조회 실패: ${error.message}`);
+    categoryMatches = (data ?? []) as NoticeListItem[];
+  }
+
+  // 키워드 일치를 먼저 넣고, 같은 분야 공고는 중복 없이 더한다
+  const merged = new Map<number, SearchItem>();
+  for (const item of keywordMatches) merged.set(item.id, { ...item, sameCategory: false });
+  for (const item of categoryMatches) {
+    if (!merged.has(item.id)) merged.set(item.id, { ...item, sameCategory: Boolean(keyword) });
+  }
+
+  const sorted = [...merged.values()].sort(
+    (a, b) => b.notice_date.localeCompare(a.notice_date) || b.id - a.id,
+  );
+  return { items: sorted.slice(0, limit), total: sorted.length, topCategory };
+}
+
+// 사례 상세 한 건 (없으면 null)
+export async function getNotice(id: number): Promise<NoticeRow | null> {
+  const { data, error } = await db().from("notices").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(`공고 조회 실패: ${error.message}`);
+  return (data as NoticeRow | null) ?? null;
+}
+
 // 그 달·그 분야의 공고 목록 (최신순, limit건). total은 전체 건수
 export async function getMonthNotices(
   month: string,
