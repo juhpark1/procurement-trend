@@ -6,11 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "review:sample": "node --env-file=.env scripts/review-sample.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "next": "16.4.3",
+    "openai": "^7.47.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
