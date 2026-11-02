@@ -8,6 +8,7 @@ import { NoticeList } from "@/components/NoticeList";
 import { TrendChart, type ChartPoint } from "@/components/TrendChart";
 import { CATEGORIES } from "@/lib/categories";
 import { currentKstMonth, formatAmount, formatMonth } from "@/lib/format";
+import { ExportForm } from "@/components/ExportForm";
 import { SearchBox } from "@/components/SearchBox";
 import { getMonthlyStats, getMonthNotices, searchNotices } from "@/lib/queries";
 
@@ -169,6 +170,16 @@ async function Search({ searchParams }: { searchParams: SearchParams }) {
   );
 }
 
+// [C] 월별 목록 내려받기 — 오늘 날짜를 쓰므로 요청 때 그린다 (주소 값을 읽어 요청 시점 렌더링으로 둠)
+async function Export({ searchParams }: { searchParams: SearchParams }) {
+  await searchParams;
+  const thisMonth = currentKstMonth();
+  const thisYear = Number(thisMonth.slice(0, 4));
+  // 수집은 2026년에 시작했으므로 2026년부터 올해까지
+  const years = Array.from({ length: thisYear - 2026 + 1 }, (_, index) => 2026 + index);
+  return <ExportForm years={years} defaultMonth={thisMonth} />;
+}
+
 export default function Home({ searchParams }: PageProps<"/">) {
   return (
     <>
@@ -193,6 +204,16 @@ export default function Home({ searchParams }: PageProps<"/">) {
       </div>
       <Suspense fallback={<p className="text-sm text-zinc-400">검색 준비 중…</p>}>
         <Search searchParams={searchParams} />
+      </Suspense>
+    </section>
+
+    <section className="flex flex-col gap-4 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+      <div>
+        <h2 className="text-xl font-semibold">월별 목록 내려받기</h2>
+        <p className="text-sm text-zinc-500">연·월을 고르면 그 달 공고 목록을 CSV 파일로 내려받아요.</p>
+      </div>
+      <Suspense fallback={<p className="text-sm text-zinc-400">준비 중…</p>}>
+        <Export searchParams={searchParams} />
       </Suspense>
     </section>
     </>
