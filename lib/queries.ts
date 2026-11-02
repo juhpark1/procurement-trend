@@ -21,14 +21,14 @@ export type Status = {
 
 // 상태 줄: 마지막 수집, 수집 시작일(가장 이른 공고일자), 수집 대상 기관 수
 export async function getStatus(): Promise<Status> {
-  const [{ data: runs }, { data: earliest }] = await Promise.all([
+  const [{ data: runs }, startDate] = await Promise.all([
     db()
       .from("runs")
       .select("finished_at, status")
       .in("status", ["success", "partial"])
       .order("finished_at", { ascending: false })
       .limit(1),
-    db().from("notice_latest").select("notice_date").order("notice_date", { ascending: true }).limit(1),
+    getStartDate(),
   ]);
 
   // 기관 수는 최상위기관코드 종류 수 (1,000줄씩 나눠 읽음)
@@ -44,7 +44,7 @@ export async function getStatus(): Promise<Status> {
 
   return {
     lastRun: runs?.[0] ?? null,
-    startDate: earliest?.[0]?.notice_date ?? null,
+    startDate,
     institutionCount: codes.size,
   };
 }
@@ -76,28 +76,47 @@ function escapeLike(text: string): string {
 
 const LIST_COLUMNS = "id, biz_no, title, demand_inst, notice_inst, amount, notice_date, category";
 
+// 조건에 맞는 공고를 데이터베이스에서 최신순으로 정렬해 모두 읽는다 (Supabase는 한 번에 1,000줄까지라 나눠 읽음)
+async function readAllLatest(
+  applyFilter: (query: ReturnType<typeof listQuery>) => ReturnType<typeof listQuery>,
+): Promise<NoticeListItem[]> {
+  const rows: NoticeListItem[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await applyFilter(listQuery())
+      .order("notice_date", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + 999);
+    if (error) throw new Error(`공고 조회 실패: ${error.message}`);
+    rows.push(...((data ?? []) as NoticeListItem[]));
+    if (!data || data.length < 1000) break;
+  }
+  return rows;
+}
+
+// 검색·목록의 기본 조건: 재공고·대학을 정리한 보기에서, "SW 아님"은 빼고 분류 전 공고는 포함
+function listQuery() {
+  return db().from("notice_latest").select(LIST_COLUMNS).or("category.is.null,category.neq.non_sw");
+}
+
 // 유사 사례 검색 ("SW 아님"은 항상 제외)
 // Design Ref: §2.2③ 검색 규칙
 //  · 키워드만: 사업명에 키워드가 든 공고 + 그 공고들에서 가장 많은 분야의 공고 ("같은 분야" 표시)
 //  · 분야만: 그 분야 공고
 //  · 둘 다: 사업명에 키워드가 들고 그 분야인 공고
-//  · 공고일자 최신순, 같은 공고는 한 번만, limit건까지
+//  · 키워드 일치 공고를 먼저(최신순), 그 뒤에 "같은 분야" 공고(최신순). 같은 공고는 한 번만, limit건까지
 export async function searchNotices(
   keyword: string,
   filter: CategoryFilter,
   limit: number,
 ): Promise<{ items: SearchItem[]; total: number; topCategory: string | null }> {
   const codes = categoryCodes(filter);
-  const base = () =>
-    db().from("notice_latest").select(LIST_COLUMNS).or("category.is.null,category.neq.non_sw").limit(1000);
 
   let keywordMatches: NoticeListItem[] = [];
   if (keyword) {
-    let query = base().ilike("title", `%${escapeLike(keyword)}%`);
-    if (codes) query = query.in("category", codes);
-    const { data, error } = await query;
-    if (error) throw new Error(`검색 실패: ${error.message}`);
-    keywordMatches = (data ?? []) as NoticeListItem[];
+    keywordMatches = await readAllLatest((query) => {
+      const matched = query.ilike("title", `%${escapeLike(keyword)}%`);
+      return codes ? matched.in("category", codes) : matched;
+    });
   }
 
   // 키워드만 있을 때: 키워드 일치 공고에서 가장 많은 분야를 "같은 분야"로 함께 보여준다
@@ -110,34 +129,41 @@ export async function searchNotices(
     }
     topCategory = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
     if (topCategory) {
-      const { data, error } = await base().eq("category", topCategory);
-      if (error) throw new Error(`같은 분야 조회 실패: ${error.message}`);
-      categoryMatches = (data ?? []) as NoticeListItem[];
+      const top = topCategory;
+      categoryMatches = await readAllLatest((query) => query.eq("category", top));
     }
   } else if (!keyword && codes) {
-    const { data, error } = await base().in("category", codes);
-    if (error) throw new Error(`분야 조회 실패: ${error.message}`);
-    categoryMatches = (data ?? []) as NoticeListItem[];
+    categoryMatches = await readAllLatest((query) => query.in("category", codes));
   }
 
-  // 키워드 일치를 먼저 넣고, 같은 분야 공고는 중복 없이 더한다
+  // 키워드 일치(이미 최신순)를 먼저, 같은 분야(최신순)는 중복 없이 뒤에 붙인다
   const merged = new Map<number, SearchItem>();
   for (const item of keywordMatches) merged.set(item.id, { ...item, sameCategory: false });
   for (const item of categoryMatches) {
     if (!merged.has(item.id)) merged.set(item.id, { ...item, sameCategory: Boolean(keyword) });
   }
 
-  const sorted = [...merged.values()].sort(
-    (a, b) => b.notice_date.localeCompare(a.notice_date) || b.id - a.id,
-  );
-  return { items: sorted.slice(0, limit), total: sorted.length, topCategory };
+  const ordered = [...merged.values()];
+  return { items: ordered.slice(0, limit), total: ordered.length, topCategory };
 }
 
-// 사례 상세 한 건 (없으면 null)
+// 사례 상세 한 건 — 화면에 보이는 공고(재공고·대학 정리, "SW 아님" 제외)만. 없으면 null
+// 옛 재공고·대학·"SW 아님" 공고 번호를 직접 넣어 상세를 열거나 AI 요약 비용을 만들지 못하게 한다
 export async function getNotice(id: number): Promise<NoticeRow | null> {
-  const { data, error } = await db().from("notices").select("*").eq("id", id).maybeSingle();
+  const { data, error } = await db()
+    .from("notice_latest")
+    .select("*")
+    .eq("id", id)
+    .or("category.is.null,category.neq.non_sw")
+    .maybeSingle();
   if (error) throw new Error(`공고 조회 실패: ${error.message}`);
   return (data as NoticeRow | null) ?? null;
+}
+
+// 수집 시작일 (가장 이른 공고일자) — 첫 달 "부분 데이터" 판단에 쓴다
+export async function getStartDate(): Promise<string | null> {
+  const { data } = await db().from("notice_latest").select("notice_date").order("notice_date").limit(1);
+  return data?.[0]?.notice_date ?? null;
 }
 
 // 그 달·그 분야의 공고 목록 (최신순, limit건). total은 전체 건수
