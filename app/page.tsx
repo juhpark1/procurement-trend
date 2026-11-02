@@ -8,7 +8,8 @@ import { NoticeList } from "@/components/NoticeList";
 import { TrendChart, type ChartPoint } from "@/components/TrendChart";
 import { CATEGORIES } from "@/lib/categories";
 import { currentKstMonth, formatAmount, formatMonth } from "@/lib/format";
-import { getMonthlyStats, getMonthNotices } from "@/lib/queries";
+import { SearchBox } from "@/components/SearchBox";
+import { getMonthlyStats, getMonthNotices, searchNotices } from "@/lib/queries";
 
 const PAGE_SIZE = 20;
 
@@ -111,8 +112,66 @@ async function Dashboard({ searchParams }: { searchParams: SearchParams }) {
   );
 }
 
+// [B] 유사 사례 찾기 (Must 2)
+// Design Ref: §5.1 [B], §2.2③ 검색 규칙
+async function Search({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const chartCategory = readCategory(params.category);
+  const keyword = typeof params.q === "string" ? params.q.trim().slice(0, 50) : "";
+  const searchCategory = readCategory(params.scat);
+  const limit = readLimit(params.slimit);
+  const hasQuery = keyword !== "" || searchCategory !== "all";
+
+  const result = hasQuery ? await searchNotices(keyword, searchCategory, limit) : null;
+  const moreParams = new URLSearchParams({
+    category: chartCategory,
+    q: keyword,
+    scat: searchCategory,
+    slimit: String(limit + PAGE_SIZE),
+  });
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SearchBox keyword={keyword} searchCategory={searchCategory} chartCategory={chartCategory} />
+      {result && result.items.length > 0 && result.topCategory && (
+        <p className="text-sm text-zinc-500">
+          사업명에 &ldquo;{keyword}&rdquo;가 든 공고와, 그 공고들에서 가장 많은 분야(
+          {CATEGORIES.find((category) => category.code === result.topCategory)?.label})의 공고를 함께 보여줘요.
+        </p>
+      )}
+      {result && result.items.length === 0 ? (
+        <div className="flex flex-col gap-3 rounded-lg bg-white p-6 dark:bg-zinc-900">
+          <p className="text-zinc-600 dark:text-zinc-400">검색 결과가 없습니다. 검색어를 바꾸거나 분야로 찾아보세요.</p>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIES.filter((category) => !category.excluded).map((category) => (
+              <Link
+                key={category.code}
+                href={`/?category=${chartCategory}&scat=${category.code}#search`}
+                scroll={false}
+                className="rounded-full border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                {category.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : (
+        result && (
+          <NoticeList
+            items={result.items}
+            total={result.total}
+            moreHref={`/?${moreParams.toString()}#search`}
+            emptyMessage=""
+          />
+        )
+      )}
+    </div>
+  );
+}
+
 export default function Home({ searchParams }: PageProps<"/">) {
   return (
+    <>
     <section className="flex flex-col gap-4">
       <div>
         <h2 className="text-xl font-semibold">분야별 발주 추이</h2>
@@ -124,5 +183,18 @@ export default function Home({ searchParams }: PageProps<"/">) {
         <Dashboard searchParams={searchParams} />
       </Suspense>
     </section>
+
+    <section id="search" className="flex flex-col gap-4 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+      <div>
+        <h2 className="text-xl font-semibold">유사 사례 찾기</h2>
+        <p className="text-sm text-zinc-500">
+          키워드나 분야로 비슷한 발주 사례를 찾아요. 사업명을 누르면 상세 정보와 AI 요약을 볼 수 있어요.
+        </p>
+      </div>
+      <Suspense fallback={<p className="text-sm text-zinc-400">검색 준비 중…</p>}>
+        <Search searchParams={searchParams} />
+      </Suspense>
+    </section>
+    </>
   );
 }
