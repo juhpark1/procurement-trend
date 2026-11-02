@@ -18,7 +18,13 @@ export async function GET(_request: NextRequest, context: RouteContext<"/api/not
     return Response.json({ status: "failed", error: "잘못된 공고 번호입니다." }, { status: 400 });
   }
 
-  const { data, error } = await db().from("notices").select("*").eq("id", noticeId).maybeSingle();
+  // 화면에 보이는 공고(재공고·대학 정리, "SW 아님" 제외)만 처리한다 — 옛 번호로 요약 비용을 만들지 못하게
+  const { data, error } = await db()
+    .from("notice_latest")
+    .select("*")
+    .eq("id", noticeId)
+    .or("category.is.null,category.neq.non_sw")
+    .maybeSingle();
   if (error) return Response.json({ status: "failed", error: "공고 조회 실패" }, { status: 500 });
   const notice = data as NoticeRow | null;
   if (!notice) return Response.json({ status: "failed", error: "없는 공고입니다." }, { status: 404 });

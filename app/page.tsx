@@ -10,7 +10,7 @@ import { CATEGORIES } from "@/lib/categories";
 import { currentKstMonth, formatAmount, formatMonth } from "@/lib/format";
 import { ExportForm } from "@/components/ExportForm";
 import { SearchBox } from "@/components/SearchBox";
-import { getMonthlyStats, getMonthNotices, searchNotices } from "@/lib/queries";
+import { getMonthlyStats, getMonthNotices, getStartDate, searchNotices } from "@/lib/queries";
 
 const PAGE_SIZE = 20;
 
@@ -26,9 +26,13 @@ function readMonth(value: unknown): string | null {
   return typeof value === "string" && /^\d{4}-\d{2}$/.test(value) ? value : null;
 }
 
+// 한 번에 보여주는 최대 건수 (Supabase가 한 번에 1,000줄까지만 주므로 그 이상은 "더 보기"를 숨김)
+const MAX_LIMIT = 1000;
+
 function readLimit(value: unknown): number {
   const limit = Number(value);
-  return Number.isInteger(limit) && limit >= PAGE_SIZE && limit <= 1000 ? limit : PAGE_SIZE;
+  if (!Number.isInteger(limit) || limit < PAGE_SIZE) return PAGE_SIZE;
+  return Math.min(limit, MAX_LIMIT);
 }
 
 async function Dashboard({ searchParams }: { searchParams: SearchParams }) {
@@ -37,9 +41,10 @@ async function Dashboard({ searchParams }: { searchParams: SearchParams }) {
   const selectedMonth = readMonth(params.month);
   const limit = readLimit(params.limit);
 
-  const stats = await getMonthlyStats(category);
-  // 수집 첫 달과 진행 중인 달은 "부분 데이터"
-  const firstMonth = stats[0]?.month;
+  const [stats, startDate] = await Promise.all([getMonthlyStats(category), getStartDate()]);
+  // 수집 첫 달(수집 시작일이 든 달)과 진행 중인 달은 "부분 데이터"
+  // 분야를 고르면 그 분야의 첫 공고가 나온 달이 달라질 수 있어, 분야와 상관없이 수집 시작일로 정한다
+  const firstMonth = startDate?.slice(0, 7);
   const thisMonth = currentKstMonth();
   const points: ChartPoint[] = stats.map((stat) => ({
     month: stat.month,
@@ -104,7 +109,9 @@ async function Dashboard({ searchParams }: { searchParams: SearchParams }) {
           <NoticeList
             items={list.items}
             total={list.total}
-            moreHref={`/?category=${category}&month=${selectedMonth}&limit=${limit + PAGE_SIZE}#list`}
+            moreHref={
+              limit >= MAX_LIMIT ? null : `/?category=${category}&month=${selectedMonth}&limit=${limit + PAGE_SIZE}#list`
+            }
             emptyMessage="해당 월 공고 없음"
           />
         </section>
@@ -161,7 +168,7 @@ async function Search({ searchParams }: { searchParams: SearchParams }) {
           <NoticeList
             items={result.items}
             total={result.total}
-            moreHref={`/?${moreParams.toString()}#search`}
+            moreHref={limit >= MAX_LIMIT ? null : `/?${moreParams.toString()}#search`}
             emptyMessage=""
           />
         )

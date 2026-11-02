@@ -2,7 +2,7 @@
 // Design Ref: §2.2① 수집 흐름, §3.2 runs 표
 // Plan SC: SC-5 자동 수집 안정성 — 실행마다 runs 표에 결과를 남긴다.
 import { createHash } from "node:crypto";
-import { fetchNotices, type Notice } from "@/lib/g2b";
+import { fetchNotices, G2bFormatError, type Notice } from "@/lib/g2b";
 import { isTargetNotice } from "@/lib/institutions";
 import { db, type NoticeRow, type RunRow } from "@/lib/db";
 
@@ -170,6 +170,10 @@ export async function runCollection(options: CollectOptions): Promise<CollectRes
         const next = await fetchPage(from, to, page);
         received.push(...next.notices);
       } catch (error) {
+        // 형식이 바뀐 것(필수 항목 없음 등)은 일시적 장애가 아니므로 실행 전체를 실패로 기록한다
+        // Design Ref: §2.2① 처리 2 — 필수 항목이 없으면 이번 실행은 "실패"
+        if (error instanceof G2bFormatError) throw error;
+        // 네트워크 오류 같은 일시적 실패는 그 쪽만 건너뛰고 "일부 실패"로 기록한다
         result.pagesFailed += 1;
         pageErrors.push(`${page}쪽: ${error instanceof Error ? error.message : String(error)}`);
       }

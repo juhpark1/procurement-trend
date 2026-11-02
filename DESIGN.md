@@ -77,7 +77,7 @@
                            │ 읽기
 ┌──────────────┐    ┌──────┴──────────────────────────────┐
 │ 사용자 브라우저 │◀──▶│ Next.js 화면 (/, /notices/[id])       │
-│              │    │ + API (/api/notices, /api/export 등)  │
+│              │    │ + API (/api/export, 요약 등)          │
 └──────────────┘    └─────────────────────────────────────┘
 ```
 
@@ -133,7 +133,9 @@
 ```
 
 **CSV 구성**
-- 파일 이름: `g2b-notices-YYYY-MM.csv`, 부분 데이터면 `g2b-notices-YYYY-MM-partial-to-YYYYMMDD.csv`
+- 파일 이름: `g2b-notices-YYYY-MM.csv`
+  - 진행 중인 달: `g2b-notices-YYYY-MM-partial-to-YYYYMMDD.csv` (오늘까지)
+  - 수집 첫 달: `g2b-notices-YYYY-MM-partial-from-YYYYMMDD.csv` (수집 시작일부터)
 - 칸: 공고번호, 차수, 사업명, 분야, 공고기관, 수요기관, 업무구분, 세부품명, 추정가격(원), 공고일, 마감일시, 나라장터 링크, 출처
 - "출처" 칸에는 모든 줄에 `조달청 나라장터(URL정보제공서비스)`를 넣는다. 별도 출처 줄을 두지 않아 건수가 섞이지 않는다.
 - 0건이면 `404`와 `{ "message": "해당 월 공고 없음" }`을 돌려주고, 화면이 이 문구를 보여준다.
@@ -207,7 +209,8 @@
 - 재공고는 **공고번호가 새로 붙는 경우가 많다** (2026-11-02 확인: 2,410건 중 202개 사업, 220건). 그래서 공고번호만으로는 같은 사업을 묶을 수 없다.
 - `notice_latest`는 **사업명(공백 정리) + 수요기관**이 같으면 같은 사업으로 보고, 게시 일시가 가장 늦은 1건만 보여주는 보기(view)다.
 - 공고기관·수요기관 이름에 "대학" 또는 "산학협력단"이 들어간 공고도 이 보기에서 뺀다 (2026-11-02 결정: 대학 제외). 새 수집 때는 `lib/institutions.ts`의 `isTargetNotice`로 처음부터 저장하지 않는다.
-- 차트·검색·CSV는 모두 `notice_latest`에서 읽는다. 원본 `notices` 표는 수집 기록용으로 그대로 둔다.
+- 차트·검색·CSV·사례 상세·AI 요약은 모두 `notice_latest`에서 읽는다("SW 아님"은 제외). 그래서 옛 재공고·대학·"SW 아님" 공고는 번호를 직접 넣어도 열리지 않고 요약 비용도 생기지 않는다. 원본 `notices` 표는 수집 기록용으로 그대로 둔다.
+- 실제 표에는 설계 초안에 없던 칸이 더 있다: `contract_type`(계약유형), `posted_at`(게시 일시, 재공고 중 최신을 고르는 기준), `ref_no`(참조번호), `content_hash`(내용이 바뀌었는지 비교), `summary_started_at`(요약 중복 생성 방지). runs 상태값에는 `running`(진행 중), `skipped`(건너뜀)도 있다.
 - Supabase는 한 번에 최대 1,000줄만 돌려주므로, 많은 줄을 읽을 때는 1,000줄씩 나눠 읽는다.
 
 ### 3.2 runs 표 (수집 기록)
@@ -390,7 +393,7 @@
 
 | 단계 | 무엇을 | 어떻게 |
 |---|---|---|
-| L1 (API) | `/api/notices`, `/api/export`, `/api/cron/collect` | 주소를 직접 호출해 응답 모양·상태 코드 확인, 비밀 값 없이 cron 호출 시 거절되는지 확인 |
+| L1 (API) | `/api/export`, `/api/cron/collect`, `/api/notices/[id]/summary` | 주소를 직접 호출해 응답 모양·상태 코드 확인, 비밀 값 없이 cron 호출 시 거절되는지 확인 |
 | L2 (화면 동작) | 분야 버튼, 합계 클릭, 검색·더 보기, CSV 버튼 | 개발 서버에서 직접 눌러 확인 |
 | L3 (전체 흐름) | 첫 화면 → 검색 → 상세 → CSV | PRD 이용 흐름대로 한 바퀴 |
 | 예외 | 0건, 빈 달, 요약 실패, 수집 실패 | 일부러 조건을 만들어 문구 확인 |
@@ -418,23 +421,31 @@ my-app/
 │   ├── layout.tsx                  # 공통 틀 (lang="ko", StatusBar)
 │   ├── page.tsx                    # 첫 화면: 대시보드 + 검색 + CSV
 │   ├── notices/[id]/page.tsx       # 사례 상세
+│   ├── not-found.tsx               # 없는 공고·주소 한국어 안내
 │   └── api/
-│       ├── cron/collect/route.ts   # 예약 수집
-│       ├── notices/route.ts        # 검색·목록
+│       ├── cron/collect/route.ts   # 예약 수집 → 분류 (?retry=1, ?days=, ?classifyOnly=1)
 │       ├── notices/[id]/summary/route.ts  # AI 요약
-│       └── export/route.ts         # CSV
+│       ├── export/route.ts         # CSV
+│       └── g2b/probe/route.ts      # 나라장터 접속 확인용 (CRON_SECRET 필요, Part 5 해외 접속 확인 뒤 정리)
+│   (목록·검색은 별도 API 없이 첫 화면이 주소 값으로 서버에서 바로 그림)
 ├── components/
 │   ├── StatusBar.tsx  CategoryTabs.tsx  TrendChart.tsx
 │   ├── NoticeList.tsx  SearchBox.tsx  ExportForm.tsx  SummaryBox.tsx
 ├── lib/
 │   ├── g2b.ts          # 나라장터 호출·항목 정리·필수 항목 검사
+│   ├── collect.ts      # 수집 흐름 (받기 → 중앙부처만 → 중복 정리 → 저장 → 기록)
 │   ├── classify.ts     # AI 분야 분류
 │   ├── summarize.ts    # AI 요약
+│   ├── ai.ts           # OpenAI 연결·모델 이름
 │   ├── db.ts           # Supabase 읽기·쓰기
+│   ├── queries.ts      # 화면용 데이터 읽기 (월별 합계·검색·상세)
+│   ├── format.ts       # 금액·날짜·나라장터 링크 표시 형식
 │   ├── categories.ts   # 분야 8개 목록 (한 곳에서 관리)
-│   └── institutions.ts # 수집 대상 판단 (최상위기관코드 첫 자리 "1" = 중앙부처)
+│   └── institutions.ts # 수집 대상 판단 (최상위기관코드 첫 자리 "1" = 중앙부처, 대학 제외)
+├── scripts/
+│   └── review-sample.mjs  # 분류 검수용 표본 100건 CSV (npm run review:sample)
 ├── supabase/
-│   └── migrations/     # notices·runs 표 만드는 SQL
+│   └── migrations/     # notices·runs 표, notice_latest 보기, 월별 합계 함수 SQL
 └── vercel.json         # 예약 시각(cron), 서버 지역(icn1)
 ```
 
@@ -448,7 +459,7 @@ PLAN.md 7) 작업 순서를 따른다.
 4. [ ] 작업 7~9: 분류 → `lib/classify.ts`
 5. [ ] 작업 10: 예약 → `vercel.json`
 6. [ ] 작업 11~14: 대시보드 → `layout.tsx`, `page.tsx`, `StatusBar`, `CategoryTabs`, `TrendChart`
-7. [ ] 작업 15~17: 검색·상세·요약 → `api/notices`, `notices/[id]`, `SummaryBox`, `lib/summarize.ts`
+7. [ ] 작업 15~17: 검색·상세·요약 → `lib/queries.ts`(검색), `SearchBox`, `notices/[id]`, `SummaryBox`, `lib/summarize.ts`
 8. [ ] 작업 18: CSV → `api/export`, `ExportForm`
 9. [ ] 작업 19~20: 점검
 
