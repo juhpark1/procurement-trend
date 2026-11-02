@@ -209,11 +209,14 @@
 | `id` | 내부 번호 |
 | `started_at` / `finished_at` | 시작·끝 시각 |
 | `status` | `success` / `partial` / `failed` |
-| `inst_total` / `inst_failed` | 조회한 기관 수 / 실패한 기관 수 |
-| `fetched` / `inserted` / `updated` | 받은 건수 / 새로 넣은 건수 / 갱신한 건수 |
+| `kind` | `main`(본 실행) / `retry`(재시도) / `manual`(수동) |
+| `period_from` / `period_to` | 조회 기간 |
+| `pages_total` / `pages_failed` | 받은 쪽 수 / 실패한 쪽 수 (기관 조건 없이 100건씩 받으므로 기관 대신 쪽 단위) |
+| `fetched` / `kept` | 받은 건수(전체 기관) / 중앙부처만 남긴 건수 |
+| `inserted` / `updated` / `classified` | 새로 넣은 건수 / 갱신한 건수 / AI 분류한 건수 |
 | `error` | 실패 이유 (비밀 값 제외) |
 
-- 화면의 "마지막 수집 시각"은 가장 최근 `success` 또는 `partial` 기록의 `finished_at`. 그 기록이 `partial`이면 "일부 기관 수집 실패(N곳)"를 함께 표시.
+- 화면의 "마지막 수집 시각"은 가장 최근 `success` 또는 `partial` 기록의 `finished_at`. 그 기록이 `partial`이면 "일부 수집 실패"를 함께 표시.
 - "수집 시작일"은 notices 표에서 **가장 이른 `notice_date`**. (첫 수집이 1개월 전 공고부터 받아오므로 첫 실행일이 아님)
 - SC-5(30일 중 29일)는 이 표로 센다. **`success`(실패 기관 0곳)인 날만** 성공으로 센다.
 - 재시도 실행은 그날(한국 시간) `success` 기록이 이미 있으면 아무것도 하지 않는다.
