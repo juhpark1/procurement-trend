@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 공공정부기관 발주현황 트렌드
 
-## Getting Started
+공공기관 AI 기획 담당자가 **나라장터 SW 사업 발주 트렌드와 유사 사례를 한 화면에서** 확인하는 웹사이트입니다.
+나라장터 입찰공고를 매일 모아 AI가 분야를 나누고, 월별 추이·유사 사례 검색·월별 CSV를 보여줍니다.
 
-First, run the development server:
+## 이런 문제를 풉니다
+
+발주 정보가 공고 단위로 흩어져 있어, 담당자가 키워드로 하나씩 검색하고 엑셀에 옮겨 정리하느라 사업 하나당 며칠이 걸립니다.
+이 사이트는 출처(공고번호·나라장터 링크)가 붙은 수치를 한곳에 모아 내부 보고서의 근거를 빠르게 만들 수 있게 합니다.
+
+## 주요 기능
+
+| 기능 | 설명 |
+|---|---|
+| 분야별 발주 추이 (Must 1) | AI가 공고를 8개 분야 + 기타(미분류) + SW 아님으로 분류하고, 월별 건수·추정가격 합계를 차트로 보여줍니다. 합계를 누르면 포함된 공고 목록이 열립니다. |
+| 유사 사례 검색 + AI 요약 (Must 2) | 키워드나 분야로 최신순 20건씩 검색하고, 사례를 누르면 3문장·200자 이내 AI 요약과 공고번호·나라장터 링크를 보여줍니다. |
+| 월별 CSV 내려받기 | 연·월을 고르면 그 달 공고 목록을 CSV로 내려받습니다. 진행 중인 달은 "부분 데이터"로 표시합니다. |
+| 자동 수집 | 매일 오전 6시대(한국 시간) 새 공고를 수집하고, 실패하면 7시대에 1회 다시 시도합니다. |
+
+모든 화면 상단에 **마지막 수집 시각 · 수집 시작일 · 수집 대상 · 출처**를 표시합니다.
+
+## 데이터와 개인정보
+
+- 데이터는 조달청 나라장터 고객센터의 **URL정보제공서비스**(공개 자료)로만 받습니다. 1차 수집 대상은 **중앙부처(대학 제외)**의 일반용역·기술용역 입찰공고이며, 금액은 추정가격(부가세 제외)입니다.
+- 공고의 **담당자 이름·전화번호·이메일은 저장하지 않고 버립니다.** AI에게도 사업명·세부품명·금액·날짜 같은 항목 값만 보냅니다.
+- 이 서비스는 공식 API가 아니어서 형식이 예고 없이 바뀔 수 있습니다. 필요한 항목이 없으면 조용히 넘기지 않고 수집 실패로 기록합니다.
+
+## 기술 스택
+
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Supabase(데이터베이스) · Vercel Cron(예약 실행) · OpenAI API(분류·요약) · Recharts(차트)
+
+## 직접 실행해 보기
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+프로젝트 루트에 `.env` 파일을 만들고 아래 값을 넣어야 합니다. 이 파일은 `.gitignore`에 등록돼 있어 저장소에 올라가지 않습니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| 이름 | 용도 |
+|---|---|
+| `OPENAI_API_KEY` | 분야 분류·요약 |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | 데이터 저장 (서버 코드만 사용) |
+| `CRON_SECRET` | 예약 수집 주소 보호 |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+데이터베이스 표는 `supabase/migrations/`의 SQL로 만듭니다.
 
-## Learn More
+## 문서
 
-To learn more about Next.js, take a look at the following resources:
+- [PRD.md](PRD.md) — 기획서 (문제, 목표, 범위, 보안)
+- [PLAN.md](PLAN.md) — 계획서 (요구사항, 작업 순서)
+- [DESIGN.md](DESIGN.md) — 설계서
+- [CHECK.md](CHECK.md) — 성공 기준 점검 기록
+- [ANALYSIS.md](ANALYSIS.md) — 설계와 구현 비교(Gap 분석)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 범위 밖
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+로그인·즐겨찾기, 관리자 페이지, 모바일 최적화, 미래 발주 예측·사업 추천, 입찰·제안서 작성 지원은 만들지 않습니다.
